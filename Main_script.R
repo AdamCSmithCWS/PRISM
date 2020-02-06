@@ -241,7 +241,7 @@ noise[i] ~ dnorm(0,taunoise)
 
 #taunoise ~ dgamma(0.001,0.001) #extra Poisson variance on counts
 taunoise ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
-sdnoise <- taunoise^-0.5
+sd_noise <- taunoise^-0.5
 varnoise <- 1/taunoise
 
 for(s in 1:nspecies){
@@ -251,7 +251,7 @@ alpha[s] ~ dnorm(0,0.1)#### species means - fixed effects
 
 #### main effects of habitat by stratum and species
 
-tau_hab_region[s] ~ dscaled.gamma(2,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 4.7
+tau_hab_region[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
 sd_hab_region[s] <- tau_hab_region[s]^-0.5
 
 #tau_hab_region[s] ~ dgamma(0.001,0.001) #prior on species specific variance
@@ -271,9 +271,9 @@ for(h in 1:nhabitats){
 #### random effects of site within clusters (zones)
 #tau_cluster[s] ~ dgamma(0.001,0.001) #
 #tau_site_cluster[s] ~ dgamma(0.001,0.001)
-tau_cluster[s] ~ dscaled.gamma(2,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 4.7
+tau_cluster[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
 sd_cluster[s] <- tau_cluster[s]^-0.5
-tau_site_cluster[s] ~ dscaled.gamma(2,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 4.7
+tau_site_cluster[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
 sd_site_cluster[s] <- tau_site_cluster[s]^-0.5
 
 
@@ -371,17 +371,18 @@ sink()
 # Run the model -----------------------------------------------------------
 
 
-nburn = 10000
+nburn = 30000
 nsave = 5000
 nthin = 10
 
 mod = jags(data = jags_data,
            model.file = "PRISM_model.txt",
-           parameters.to.save = c("vis","all_muvis","tau_sr",
+           parameters.to.save = c("vis","all_muvis","sd_sr",
                                   "n","n_uncor",
                                   "N","Nr",
-                                  "tau_cluster","tau_site_cluster",
-                                  "tau_hab_region"),
+                                  "sd_cluster","sd_site_cluster",
+                                  "sd_noise",
+                                  "sd_hab_region"),
            n.chains = 3,
            n.iter = (nsave*nthin)+nburn,
            n.burnin = nburn,
@@ -512,6 +513,27 @@ for(pg in 1:ceiling(nspecies/6)){
   
   
   
+  # Total estimated populations ---------------------------------------------------------
+  
+  
+  out_N = filter(out,node %in% paste0("N[",1:nspecies,"]"))
+  out_N$j_species = 1:nrow(out_N)
+  out_N = left_join(out_N,sp_names_indices)
+  
+  
+  visib = ggplot(data = out_N,aes(x = species,y = med))+
+    geom_linerange(aes(x = species,ymin = lci,ymax = uci),alpha = 0.5)+
+    geom_point()+
+    ylab("Population size")+
+    geom_hline(yintercept = 1)+
+    #coord_cartesian(ylim = c(0.25,1.5))+
+    labs(title = "Total estimated populations")
+  
+  pdf("Total estimated populations.pdf")
+  print(visib)  
+  dev.off()
+  
+  
 
 # MCMC explore ------------------------------------------------------------
 
@@ -519,16 +541,10 @@ conv = ggs(mod$samples)
   
   
   
-  conv_tau = filter(conv,grepl(pattern = "tau",Parameter))
+  conv_sd = filter(conv,grepl(pattern = "sd",Parameter))
   
-  fullconv = ggmcmc(conv_tau,file="full convergence on precision parameters.pdf", param_page=10)
-  pdf("full convergence on precision parameters.pdf",
-      width = 11,
-      height = 8.5)
-  print(fullconv)
-  dev.off()
-  
-  
+  fullconv = ggmcmc(conv_sd,file="full convergence on sd parameters.pdf", param_page=10)
+
   
   
   
