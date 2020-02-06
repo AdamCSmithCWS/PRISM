@@ -1,0 +1,136 @@
+
+model
+{
+
+#### likelihood for rapid surveys
+for(i in 1:nrapid){
+
+rapid_count[i] ~ dpois(lambda[i])
+
+log(lambda[i]) <- elambda[i] 
+
+elambda[i] <- log_area[i] + alpha[species[i]] + strat[habitat[i],sub_region[i],species[i]] + site[plot[i],cluster[i],species[i]] + noise[i]
+
+noise[i] ~ dnorm(0,taunoise)
+#noise[i] ~ dt(0,taunoise,nu) #alternate heavy-tailed
+
+}#i
+
+
+### precision priors
+  #tau_hab_region ~ dgamma(0.001,0.001)## alternative without species specific variance
+	#nu ~ dgamma(2, 0.1) #alternative degrees of freedom (i.e., the heavy-tail component of the t-distribution), if nu is large (infinite) this is equivalent to the normal distribution noise
+
+taunoise ~ dgamma(0.001,0.001) #extra Poisson variance on counts
+
+
+
+for(s in 1:nspecies){
+
+alpha[s] ~ dnorm(0,0.1)#### species means - fixed effects
+
+
+#### main effects of habitat by stratum and species
+tau_hab_region[s] ~ dgamma(0.001,0.001) #prior on species specific variance
+
+for(h in 1:nhabitats){
+  hab[h,s] ~ dnorm(0,0.1) #mean habitat effects for a species
+  for(r in 1:nsub_regions){
+    #strat[h,r,s] ~ dnorm(hab[h,s],tau_hab_region) ## alternative without species specific variance
+    strat[h,r,s] ~ dnorm(hab[h,s],tau_hab_region[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
+
+  }#r
+}#h
+
+
+
+
+#### random effects of site within clusters (zones)
+tau_cluster[s] ~ dgamma(0.001,0.001) #
+tau_site_cluster[s] ~ dgamma(0.001,0.001)
+v_cluster[s] <- 1/tau_cluster[s]
+v_site_cluster[s] <- 1/tau_site_cluster[s]
+
+for(k in 1:nclusters){
+  clust[k,s] ~ dnorm(0,tau_cluster[s])
+  for(p in 1:nplots[k]){
+    site[p,k,s] ~ dnorm(clust[k,s],tau_site_cluster[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
+  }#p
+}#h
+
+
+
+#### Derived parameters
+
+
+
+for(h in 1:nhabitats){
+  for(r in 1:nsub_regions){
+
+    n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s])
+    n_uncor[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s])
+    n_novar[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s])
+
+}#r
+}#h
+
+
+}#s
+
+
+
+
+
+
+
+
+
+
+
+#### intensive survey parameters for visibility
+
+
+for(i in 1:nintensive){
+ ## raw counts
+ count_i[i] ~ dpois(lambda_i[i])
+ count_r[i] ~ dpois(lambda_r[i])
+ ## poisson counts at sites
+ 
+ ## species specific counts at each intensive survey
+  mu_i[i] <- si[species_r[i]] #species mean expected count
+	loglambda_i[i] ~ dnorm(mu_i[i],taunoise_i)
+	log(lambda_i[i]) <- loglambda_i[i]
+	
+ ## species specific counts at each rapid survey of intensive plots
+   mu_r[i] <- loglambda_i[i] - sr[species_r[i]] #expected count for that species in the intensive survey minus a correction value
+	loglambda_r[i] ~ dnorm(mu_r[i],taunoise_r)
+	log(lambda_r[i]) <- loglambda_r[i]
+
+
+}#i
+
+
+
+## priors
+taunoise_i ~ dgamma(0.001,0.001) # count variance on intensive surveys
+taunoise_r ~ dgamma(0.001,0.001) # count variance on rapid surveys
+#taustratspecies ~ dgamma(0.001,0.001) #variance among strata on species true abundance in intensive surveys 
+
+tau_sr ~ dgamma(0.001,0.001) # variance among species in the detection ratio
+#taustrat_ratio ~ dgamma(0.001,0.001) #variance among strata on species level detection ratio
+SR ~ dnorm(0,0.1) #mean detection ratio across species 
+
+## visibility corrections
+	for(s in 1:nspecies){
+		si[s] ~ dnorm(0.0,0.1)
+		sr[s] ~ dnorm(SR,tau_sr)
+
+		  # si[s,sr] ~ dnorm(mu_si[s],taustratspecies)
+		  # sr[s,sr] ~ dnorm(mu_sr[s],taustrat_ratio)
+		  # 
+		  vis[s] <- exp(sr[s]) #species by region visibility adjustments on the multiplicative scale
+	}#s
+	all_muvis <- exp(SR)
+
+
+}
