@@ -8,6 +8,7 @@ library(tidyverse)
 library(jagsUI)
 library(lubridate)
 library(dclone)
+library(ggforce)
 
 # Data --------------------------------------------------------------------
 
@@ -408,24 +409,27 @@ print(visib)
   
   
   out_n = filter(out,grepl(node,pattern = "n[",fixed = T))
-  out_n$j_species = as.integer(str_match(out_n$node,"(?<=n[:punct:])[:digit:]"))
-  out_n$habitat = as.integer(str_match(out_n$node,"(?<=n[:punct:][:digit:][:punct:])[:digit:]"))
-  out_n$j_sub_region = as.integer(str_match(out_n$node,"(?<=n[:punct:][:digit:][:punct:][:digit:][:punct:])[:digit:]+"))
+  out_n$j_species = as.integer(str_match(out_n$node,"(?<=n[:punct:])[:digit:]+"))
+  out_n$habitat = as.integer(str_match(out_n$node,"(?<=n[:punct:][:digit:]{1,2}[:punct:])[:digit:]+"))
+  out_n$j_sub_region = as.integer(str_match(out_n$node,"(?<=n[:punct:][:digit:]{1,2}[:punct:][:digit:]{1,2}[:punct:])[:digit:]+"))
   
   out_n = left_join(out_n,sp_names_indices)
   out_n = left_join(out_n,all_sub_regions)
   out_n$Region = factor(out_n$Region)
   out_n$habitat = factor(out_n$habitat)
   
-  nbyreg_s = ggplot(data = out_n,aes(x = Region,y = med,colour = habitat))+
-    geom_linerange(aes(x = Region,ymin = lci,ymax = uci),alpha = 0.5,position = position_dodge(width = 0.6))+
-    geom_point(position = position_dodge(width = 0.6))+
-    facet_wrap(facets = ~species,scales = "free")
-
   pdf("sub_regional population size estimates by habitat.pdf",
       width = 11,
       height = 8.5)
+for(pg in 1:ceiling(nspecies/6)){
+  nbyreg_s = ggplot(data = out_n,aes(x = Region,y = med,colour = habitat))+
+    geom_linerange(aes(x = Region,ymin = lci,ymax = uci),alpha = 0.5,position = position_dodge(width = 0.6))+
+    geom_point(position = position_dodge(width = 0.6))+
+    facet_wrap_paginate(facets = ~species,scales = "free",ncol = 2,nrow = 3,page = pg)
   print(nbyreg_s)
+  }
+
+
   dev.off()
   
   
@@ -433,27 +437,28 @@ print(visib)
 
 # regional abundance plot uncorrected for area ----------------------
 
-  
   out_n = filter(out,grepl(node,pattern = "n_uncor[",fixed = T))
-  out_n$j_species = as.integer(str_match(out_n$node,"(?<=n_uncor[:punct:])[:digit:]"))
-  out_n$habitat = as.integer(str_match(out_n$node,"(?<=n_uncor[:punct:][:digit:][:punct:])[:digit:]"))
-  out_n$j_sub_region = as.integer(str_match(out_n$node,"(?<=n_uncor[:punct:][:digit:][:punct:][:digit:][:punct:])[:digit:]+"))
+  out_n$j_species = as.integer(str_match(out_n$node,"(?<=n_uncor[:punct:])[:digit:]+"))
+  out_n$habitat = as.integer(str_match(out_n$node,"(?<=n_uncor[:punct:][:digit:]{1,2}[:punct:])[:digit:]+"))
+  out_n$j_sub_region = as.integer(str_match(out_n$node,"(?<=n_uncor[:punct:][:digit:]{1,2}[:punct:][:digit:]{1,2}[:punct:])[:digit:]+"))
   
   out_n = left_join(out_n,sp_names_indices)
   out_n = left_join(out_n,all_sub_regions)
   out_n$Region = factor(out_n$Region)
   out_n$habitat = factor(out_n$habitat)
   
-  nbyreg_s = ggplot(data = out_n,aes(x = Region,y = med,colour = habitat))+
-    geom_linerange(aes(x = Region,ymin = lci,ymax = uci),alpha = 0.5,position = position_dodge(width = 0.6))+
-    geom_point(position = position_dodge(width = 0.6))+
-    facet_wrap(facets = ~species,scales = "free")
-  
+
   pdf("sub_regional population size estimates not corrected for area.pdf",
       width = 11,
       height = 8.5)
-  print(nbyreg_s)
-  dev.off()
+  for(pg in 1:ceiling(nspecies/6)){
+    nbyreg_s = ggplot(data = out_n,aes(x = Region,y = med,colour = habitat))+
+    geom_linerange(aes(x = Region,ymin = lci,ymax = uci),alpha = 0.5,position = position_dodge(width = 0.6))+
+    geom_point(position = position_dodge(width = 0.6))+
+      facet_wrap_paginate(facets = ~species,scales = "free",ncol = 2,nrow = 3,page = pg)
+    print(nbyreg_s)
+  }
+    dev.off()
   
   
   
@@ -465,8 +470,8 @@ print(visib)
   
   
   out_n = filter(out,grepl(node,pattern = "Nr[",fixed = T))
-  out_n$j_species = as.integer(str_match(out_n$node,"(?<=Nr[:punct:])[:digit:]"))
-  out_n$j_sub_region = as.integer(str_match(out_n$node,"(?<=Nr[:punct:][:digit:][:punct:])[:digit:]+"))
+  out_n$j_species = as.integer(str_match(out_n$node,"(?<=Nr[:punct:])[:digit:]+"))
+  out_n$j_sub_region = as.integer(str_match(out_n$node,"(?<=Nr[:punct:][:digit:]{1,2}[:punct:])[:digit:]+"))
   
   out_n = left_join(out_n,sp_names_indices)
   out_n = left_join(out_n,all_sub_regions)
@@ -480,7 +485,13 @@ print(visib)
   pdf("sub_regional population size estimates.pdf",
       width = 11,
       height = 8.5)
-  print(nbyreg_s)
+  for(pg in 1:ceiling(nspecies/6)){
+    nbyreg_s = ggplot(data = out_n,aes(x = Region,y = med))+
+    geom_linerange(aes(x = Region,ymin = lci,ymax = uci),alpha = 0.5)+
+    geom_point()+
+      facet_wrap_paginate(facets = ~species,scales = "free",ncol = 2,nrow = 3,page = pg)
+    print(nbyreg_s)
+  }
   dev.off()
   
   

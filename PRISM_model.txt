@@ -63,17 +63,16 @@ for(k in 1:nclusters){
 #### Derived parameters
 
 
-
-for(h in 1:nhabitats){
   for(r in 1:nsub_regions){
+for(h in 1:nhabitats){
 
     n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s])
-    n_uncor[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s])
-    n_novar[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s])
-
-}#r
+    n_uncor[s,h,r] <- exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s])
+    
 }#h
-
+Nr[s,r] <- sum(n[s,1:nhabitats,r])
+}#r
+N[s] <- sum(Nr[s,1:nsub_regions])
 
 }#s
 
