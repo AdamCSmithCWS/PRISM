@@ -48,7 +48,7 @@ n_non_zeros = sort(table(rap$species)[shorebirds],decreasing = T)
 
 p_non_zeros = n_non_zeros/nrapid
 
-minimum_proportion = 0.1 #change this to add less prevalent species
+minimum_proportion = 0.03 #change this to add less prevalent species
 species_to_inc = names(p_non_zeros[p_non_zeros > minimum_proportion]) 
 # including only species present in > 10% of the surveys
 
@@ -282,9 +282,8 @@ for(k in 1:nclusters){
 for(h in 1:nhabitats){
 
     n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s])
-    n_uncor[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s])
-    n_novar[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s])
-
+    n_uncor[s,h,r] <- exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s])
+    
 }#h
 Nr[s,r] <- sum(n[s,1:nhabitats,r])
 }#r
@@ -363,7 +362,7 @@ nthin = 10
 mod = jags(data = jags_data,
            model.file = "PRISM_model.txt",
            parameters.to.save = c("vis","all_muvis","tau_sr",
-                                  "n","n_uncor","n_novar",
+                                  "n","n_uncor",
                                   "N","Nr",
                                   "tau_cluster","tau_site_cluster",
                                   "tau_hab_region"),
@@ -404,7 +403,7 @@ print(visib)
   
   
 
-# regional abundance plot -------------------------------------------------
+# regional abundance plot by habitat -------------------------------------------------
 
   
   
@@ -419,11 +418,11 @@ print(visib)
   out_n$habitat = factor(out_n$habitat)
   
   nbyreg_s = ggplot(data = out_n,aes(x = Region,y = med,colour = habitat))+
-    geom_linerange(aes(x = Region,ymin = lqrt,ymax = uqrt),alpha = 0.5,position = position_dodge(width = 0.6))+
+    geom_linerange(aes(x = Region,ymin = lci,ymax = uci),alpha = 0.5,position = position_dodge(width = 0.6))+
     geom_point(position = position_dodge(width = 0.6))+
     facet_wrap(facets = ~species,scales = "free")
 
-  pdf("sub_regional population size estimates.pdf",
+  pdf("sub_regional population size estimates by habitat.pdf",
       width = 11,
       height = 8.5)
   print(nbyreg_s)
@@ -432,7 +431,7 @@ print(visib)
   
   
 
-# regional abundance plot uncorrected for visibility ----------------------
+# regional abundance plot uncorrected for area ----------------------
 
   
   out_n = filter(out,grepl(node,pattern = "n_uncor[",fixed = T))
@@ -446,11 +445,11 @@ print(visib)
   out_n$habitat = factor(out_n$habitat)
   
   nbyreg_s = ggplot(data = out_n,aes(x = Region,y = med,colour = habitat))+
-    geom_linerange(aes(x = Region,ymin = lqrt,ymax = uqrt),alpha = 0.5,position = position_dodge(width = 0.6))+
+    geom_linerange(aes(x = Region,ymin = lci,ymax = uci),alpha = 0.5,position = position_dodge(width = 0.6))+
     geom_point(position = position_dodge(width = 0.6))+
     facet_wrap(facets = ~species,scales = "free")
   
-  pdf("sub_regional population size estimates not corrected for vis.pdf",
+  pdf("sub_regional population size estimates not corrected for area.pdf",
       width = 11,
       height = 8.5)
   print(nbyreg_s)
@@ -462,25 +461,23 @@ print(visib)
   
   
   
-  # regional abundance plot uncorrected for variance components ----------------------
+  # regional abundance plot  ----------------------
   
   
-  out_n = filter(out,grepl(node,pattern = "n_novar[",fixed = T))
-  out_n$j_species = as.integer(str_match(out_n$node,"(?<=n_novar[:punct:])[:digit:]"))
-  out_n$habitat = as.integer(str_match(out_n$node,"(?<=n_novar[:punct:][:digit:][:punct:])[:digit:]"))
-  out_n$j_sub_region = as.integer(str_match(out_n$node,"(?<=n_novar[:punct:][:digit:][:punct:][:digit:][:punct:])[:digit:]+"))
+  out_n = filter(out,grepl(node,pattern = "Nr[",fixed = T))
+  out_n$j_species = as.integer(str_match(out_n$node,"(?<=Nr[:punct:])[:digit:]"))
+  out_n$j_sub_region = as.integer(str_match(out_n$node,"(?<=Nr[:punct:][:digit:][:punct:])[:digit:]+"))
   
   out_n = left_join(out_n,sp_names_indices)
   out_n = left_join(out_n,all_sub_regions)
   out_n$Region = factor(out_n$Region)
-  out_n$habitat = factor(out_n$habitat)
-  
-  nbyreg_s = ggplot(data = out_n,aes(x = Region,y = med,colour = habitat))+
-    geom_linerange(aes(x = Region,ymin = lqrt,ymax = uqrt),alpha = 0.5,position = position_dodge(width = 0.6))+
-    geom_point(position = position_dodge(width = 0.6))+
+ 
+  nbyreg_s = ggplot(data = out_n,aes(x = Region,y = med))+
+    geom_linerange(aes(x = Region,ymin = lci,ymax = uci),alpha = 0.5)+
+    geom_point()+
     facet_wrap(facets = ~species,scales = "free")
   
-  pdf("sub_regional population size estimates not corrected for variance comp.pdf",
+  pdf("sub_regional population size estimates.pdf",
       width = 11,
       height = 8.5)
   print(nbyreg_s)
