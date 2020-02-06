@@ -9,6 +9,7 @@ library(jagsUI)
 library(lubridate)
 library(dclone)
 library(ggforce)
+library(ggmcmc)
 
 # Data --------------------------------------------------------------------
 
@@ -233,13 +234,15 @@ noise[i] ~ dnorm(0,taunoise)
 }#i
 
 
+
 ### precision priors
   #tau_hab_region ~ dgamma(0.001,0.001)## alternative without species specific variance
 	#nu ~ dgamma(2, 0.1) #alternative degrees of freedom (i.e., the heavy-tail component of the t-distribution), if nu is large (infinite) this is equivalent to the normal distribution noise
 
-taunoise ~ dgamma(0.001,0.001) #extra Poisson variance on counts
-
-
+#taunoise ~ dgamma(0.001,0.001) #extra Poisson variance on counts
+taunoise ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+sdnoise <- taunoise^-0.5
+varnoise <- 1/taunoise
 
 for(s in 1:nspecies){
 
@@ -247,7 +250,11 @@ alpha[s] ~ dnorm(0,0.1)#### species means - fixed effects
 
 
 #### main effects of habitat by stratum and species
-tau_hab_region[s] ~ dgamma(0.001,0.001) #prior on species specific variance
+
+tau_hab_region[s] ~ dscaled.gamma(2,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 4.7
+sd_hab_region[s] <- tau_hab_region[s]^-0.5
+
+#tau_hab_region[s] ~ dgamma(0.001,0.001) #prior on species specific variance
 
 for(h in 1:nhabitats){
   hab[h,s] ~ dnorm(0,0.1) #mean habitat effects for a species
@@ -262,8 +269,16 @@ for(h in 1:nhabitats){
 
 
 #### random effects of site within clusters (zones)
-tau_cluster[s] ~ dgamma(0.001,0.001) #
-tau_site_cluster[s] ~ dgamma(0.001,0.001)
+#tau_cluster[s] ~ dgamma(0.001,0.001) #
+#tau_site_cluster[s] ~ dgamma(0.001,0.001)
+tau_cluster[s] ~ dscaled.gamma(2,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 4.7
+sd_cluster[s] <- tau_cluster[s]^-0.5
+tau_site_cluster[s] ~ dscaled.gamma(2,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 4.7
+sd_site_cluster[s] <- tau_site_cluster[s]^-0.5
+
+
+
+
 v_cluster[s] <- 1/tau_cluster[s]
 v_site_cluster[s] <- 1/tau_site_cluster[s]
 
@@ -282,8 +297,8 @@ for(k in 1:nclusters){
   for(r in 1:nsub_regions){
 for(h in 1:nhabitats){
 
-    n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s])
-    n_uncor[s,h,r] <- exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s])
+    n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
+    n_uncor[s,h,r] <- exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
     
 }#h
 Nr[s,r] <- sum(n[s,1:nhabitats,r])
@@ -497,13 +512,21 @@ for(pg in 1:ceiling(nspecies/6)){
   
   
   
+
+# MCMC explore ------------------------------------------------------------
+
+conv = ggs(mod$samples)  
   
   
   
+  conv_tau = filter(conv,grepl(pattern = "tau",Parameter))
   
-  
-  
-  
+  fullconv = ggmcmc(conv_tau,file="full convergence on precision parameters.pdf", param_page=10)
+  pdf("full convergence on precision parameters.pdf",
+      width = 11,
+      height = 8.5)
+  print(fullconv)
+  dev.off()
   
   
   
