@@ -5,3 +5,7 @@
 **/sample
 *Copy.pdf
 *Copy.csv
+arch/
+doc/
+*parameters.pdf
+

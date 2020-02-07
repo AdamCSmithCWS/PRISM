@@ -194,8 +194,8 @@ jags_data = list(
   species = species,
   habitat = habitat,
   sub_region = sub_region,
-  cluster = cluster,
-  plot = plot,
+  #cluster = cluster,
+  #plot = plot,
   log_area = log_area,
   nhabitats = 3,
   nsub_regions = nsub_regions,
@@ -213,6 +213,10 @@ jags_data = list(
 
 # Model Description -------------------------------------------------------
 
+### investigate:
+####  the necessity of the over-dispersion parameter which is correlated with site-effects
+####  the convergence of the habitat parameters (particularly among regions)
+####  
 
 sink("PRISM_model.txt")
 cat("
@@ -226,23 +230,29 @@ rapid_count[i] ~ dpois(lambda[i])
 
 log(lambda[i]) <- elambda[i] 
 
-elambda[i] <- log_area[i] + alpha[species[i]] + strat[habitat[i],sub_region[i],species[i]] + site[plot[i],cluster[i],species[i]] + noise[i]
+#elambda[i] <- log_area[i] + alpha[species[i]] + strat[habitat[i],sub_region[i],species[i]] + site[plot[i],cluster[i],species[i]] + noise[i]
+elambda[i] <- log_area[i] + alpha[species[i]] + strat[habitat[i],sub_region[i],species[i]] + noise[i]
 
-noise[i] ~ dnorm(0,taunoise)
-#noise[i] ~ dt(0,taunoise,nu) #alternate heavy-tailed
+#noise[i] ~ dnorm(0,taunoise)
+noise[i] ~ dt(0,taunoise,nu) #alternate heavy-tailed
 
 }#i
 
 
 
 ### precision priors
-  #tau_hab_region ~ dgamma(0.001,0.001)## alternative without species specific variance
-	#nu ~ dgamma(2, 0.1) #alternative degrees of freedom (i.e., the heavy-tail component of the t-distribution), if nu is large (infinite) this is equivalent to the normal distribution noise
+nu ~ dgamma(2, 0.1) #alternative degrees of freedom (i.e., the heavy-tail component of the t-distribution), if nu is large (infinite) this is equivalent to the normal distribution noise
 
 #taunoise ~ dgamma(0.001,0.001) #extra Poisson variance on counts
 taunoise ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
 sd_noise <- taunoise^-0.5
-varnoise <- 1/taunoise
+#varnoise <- 1/taunoise
+adj <- (1.422*pow(nu,0.906))/(1+(1.422*pow(nu,0.906)))
+varnoise <- (sd_noise/adj)^2
+hab[1] <- 0  
+for(h in 2:nhabitats){
+  hab[h] ~ dnorm(0,0.1) #mean habitat effects for a species
+}
 
 for(s in 1:nspecies){
 
@@ -257,10 +267,10 @@ sd_hab_region[s] <- tau_hab_region[s]^-0.5
 #tau_hab_region[s] ~ dgamma(0.001,0.001) #prior on species specific variance
 
 for(h in 1:nhabitats){
-  hab[h,s] ~ dnorm(0,0.1) #mean habitat effects for a species
+  #hab[h,s] ~ dnorm(0,0.1) #mean habitat effects for a species
   for(r in 1:nsub_regions){
     #strat[h,r,s] ~ dnorm(hab[h,s],tau_hab_region) ## alternative without species specific variance
-    strat[h,r,s] ~ dnorm(hab[h,s],tau_hab_region[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
+    strat[h,r,s] ~ dnorm(hab[h],tau_hab_region[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
 
   }#r
 }#h
@@ -271,23 +281,24 @@ for(h in 1:nhabitats){
 #### random effects of site within clusters (zones)
 #tau_cluster[s] ~ dgamma(0.001,0.001) #
 #tau_site_cluster[s] ~ dgamma(0.001,0.001)
-tau_cluster[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
-sd_cluster[s] <- tau_cluster[s]^-0.5
-tau_site_cluster[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
-sd_site_cluster[s] <- tau_site_cluster[s]^-0.5
+#tau_cluster[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+#sd_cluster[s] <- tau_cluster[s]^-0.5
+#tau_site_cluster[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+#sd_site_cluster[s] <- tau_site_cluster[s]^-0.5
 
 
 
 
-v_cluster[s] <- 1/tau_cluster[s]
-v_site_cluster[s] <- 1/tau_site_cluster[s]
+#v_cluster[s] <- 1/tau_cluster[s]
+#v_site_cluster[s] <- 1/tau_site_cluster[s]
 
-for(k in 1:nclusters){
-  clust[k,s] ~ dnorm(0,tau_cluster[s])
-  for(p in 1:nplots[k]){
-    site[p,k,s] ~ dnorm(clust[k,s],tau_site_cluster[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
-  }#p
-}#h
+# for(k in 1:nclusters){
+#   #clust[k,s] ~ dnorm(0,tau_cluster[s])
+#   for(p in 1:nplots[k]){
+#     site[p,k,s] ~ dnorm(0,tau_site_cluster[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
+#       #site[p,k,s] ~ dnorm(clust[k,s],tau_site_cluster[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
+#   }#p
+# }#h
 
 
 
@@ -297,8 +308,10 @@ for(k in 1:nclusters){
   for(r in 1:nsub_regions){
 for(h in 1:nhabitats){
 
-    n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
-    n_uncor[s,h,r] <- exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
+    #n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
+    #n_uncor[s,h,r] <- exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
+     n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*varnoise)
+    n_uncor[s,h,r] <- exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*varnoise)
     
 }#h
 Nr[s,r] <- sum(n[s,1:nhabitats,r])
@@ -371,7 +384,7 @@ sink()
 # Run the model -----------------------------------------------------------
 
 
-nburn = 30000
+nburn = 2000
 nsave = 5000
 nthin = 10
 
@@ -380,7 +393,11 @@ mod = jags(data = jags_data,
            parameters.to.save = c("vis","all_muvis","sd_sr",
                                   "n","n_uncor",
                                   "N","Nr",
-                                  "sd_cluster","sd_site_cluster",
+                                  "nu",
+                                  #"sd_cluster",
+                                  "hab",
+                                  "strat",
+                                  #"sd_site_cluster",
                                   "sd_noise",
                                   "sd_hab_region"),
            n.chains = 3,
@@ -451,7 +468,10 @@ for(pg in 1:ceiling(nspecies/6)){
   
   
 
-# regional abundance plot uncorrected for area ----------------------
+# regional density plot uncorrected for area ----------------------
+# add mean observed
+  
+  
 
   out_n = filter(out,grepl(node,pattern = "n_uncor[",fixed = T))
   out_n$j_species = as.integer(str_match(out_n$node,"(?<=n_uncor[:punct:])[:digit:]+"))
@@ -462,15 +482,21 @@ for(pg in 1:ceiling(nspecies/6)){
   out_n = left_join(out_n,all_sub_regions)
   out_n$Region = factor(out_n$Region)
   out_n$habitat = factor(out_n$habitat)
-  
+  for(j in 1:nrow(out_n)){
+    ww = which(all_data$X1.Region == out_n[j,"Region"] &
+                 all_data$X7.Hab == out_n[j,"habitat"] &
+                 all_data$species == out_n[j,"species"])
+    out_n[j,"obs_mean"] <- mean(as.numeric(unlist(all_data[ww,"number"]/all_data[ww,"area"])),na.rm = T)
+      }
 
-  pdf("sub_regional population size estimates not corrected for area.pdf",
+  pdf("sub_regional density estimates not corrected for area.pdf",
       width = 11,
       height = 8.5)
   for(pg in 1:ceiling(nspecies/6)){
     nbyreg_s = ggplot(data = out_n,aes(x = Region,y = med,colour = habitat))+
     geom_linerange(aes(x = Region,ymin = lci,ymax = uci),alpha = 0.5,position = position_dodge(width = 0.6))+
     geom_point(position = position_dodge(width = 0.6))+
+      geom_point(data = out_n,aes(x = Region,y = obs_mean,colour = habitat),shape = 2,alpha = 0.5,position = position_dodge(width = 0.6))+
       facet_wrap_paginate(facets = ~species,scales = "free",ncol = 2,nrow = 3,page = pg)
     print(nbyreg_s)
   }
@@ -543,18 +569,35 @@ conv = ggs(mod$samples)
   
   conv_sd = filter(conv,grepl(pattern = "sd",Parameter))
   
-  fullconv = ggmcmc(conv_sd,file="full convergence on sd parameters.pdf", param_page=10)
+ggmcmc(conv_sd,file="full convergence on sd parameters.pdf", param_page=10)
 
   
   
   
+habs = filter(conv,grepl(pattern = "hab[",Parameter,fixed = T))
+ggmcmc(habs,file="full convergence on hab parameters.pdf", param_page=10)
+
+  
+
+strats = filter(conv,grepl(pattern = "strat[",Parameter,fixed = T))
+ggmcmc(strats,file="full convergence on strats parameters.pdf", param_page=10)
+
+# raw data distributions --------------------------------------------------
+
+all_data$Habitat = factor(all_data$X7.Hab)
+all_data_nonz = filter(all_data,number > 5)
+
+  raw.p = ggplot()+
+    geom_violin(data = all_data,aes(x = Habitat, y = number))+
+    #geom_dotplot(data = all_data_nonz,aes(x = Habitat, y = number),binaxis = "y",binwidth = 1,stackdir = "center",dotsize = 1,alpha = 0.3)+
+    facet_wrap(facets = ~species,nrow = 3,ncol = 5,scales = "free")
   
   
-  
-  
-  
-  
-  
+  pdf(file = "violin plots of the raw counts by species and habitat.pdf",
+      width = 11,
+      height = 8.5)
+  print(raw.p)
+  dev.off()
   
   
   
