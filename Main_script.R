@@ -50,7 +50,7 @@ n_non_zeros = sort(table(rap$species)[shorebirds],decreasing = T)
 
 p_non_zeros = n_non_zeros/nrapid
 
-minimum_proportion = 0.03 #change this to add less prevalent species
+minimum_proportion = 0.01 #change this to add less prevalent species
 species_to_inc = names(p_non_zeros[p_non_zeros > minimum_proportion]) 
 # including only species present in > 10% of the surveys
 
@@ -79,8 +79,14 @@ for(k in 1:max(all_data$j_cluster)){
 }
 
 
+### distribution of plots by zone by habitat
 
+plotsbyzone = unique(all_data[,c("j_cluster","j_plot","j_habitat")])
+dis = ggplot()+
+  geom_histogram(data = plotsbyzone,aes(x = j_plot),stat = "bin")+
+  facet_col(facets = ~j_habitat)
 
+print(dis)
 
 
 # Data objects required for the rapid survey portion of the model ---------
@@ -194,12 +200,12 @@ jags_data = list(
   species = species,
   habitat = habitat,
   sub_region = sub_region,
-  #cluster = cluster,
+  cluster = cluster,
   #plot = plot,
   log_area = log_area,
   nhabitats = 3,
   nsub_regions = nsub_regions,
-  nplots = nplots,
+  #nplots = nplots,
   nclusters = nclusters,
   nspecies = nspecies,
   nintensive = nintensive,
@@ -230,28 +236,30 @@ rapid_count[i] ~ dpois(lambda[i])
 
 log(lambda[i]) <- elambda[i] 
 
-#elambda[i] <- log_area[i] + alpha[species[i]] + strat[habitat[i],sub_region[i],species[i]] + site[plot[i],cluster[i],species[i]] + noise[i]
-elambda[i] <- log_area[i] + alpha[species[i]] + strat[habitat[i],sub_region[i],species[i]] + noise[i]
+elambda[i] <- log_area[i] + alpha[species[i]] + strat[habitat[i],sub_region[i],species[i]] + zone[cluster[i],species[i]]
 
-#noise[i] ~ dnorm(0,taunoise)
-noise[i] ~ dt(0,taunoise,nu) #alternate heavy-tailed
+#elambda[i] <- log_area[i] + alpha[species[i]] + strat[habitat[i],sub_region[i],species[i]] + site[plot[i],cluster[i],species[i]] + noise[i]
+#elambda[i] <- log_area[i] + alpha[species[i]] + strat[habitat[i],sub_region[i],species[i]] + noise[i]
+
+#noise[i] ~ dnorm(0,taunoise[species[i]])
+#noise[i] ~ dt(0,taunoise[species[i]],nu[species[i]]) #alternate heavy-tailed
 
 }#i
 
 
 
 ### precision priors
-nu ~ dgamma(2, 0.1) #alternative degrees of freedom (i.e., the heavy-tail component of the t-distribution), if nu is large (infinite) this is equivalent to the normal distribution noise
-
-#taunoise ~ dgamma(0.001,0.001) #extra Poisson variance on counts
-taunoise ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
-sd_noise <- taunoise^-0.5
-#varnoise <- 1/taunoise
-adj <- (1.422*pow(nu,0.906))/(1+(1.422*pow(nu,0.906)))
-varnoise <- (sd_noise/adj)^2
+# nu ~ dgamma(2, 0.1) #alternative degrees of freedom (i.e., the heavy-tail component of the t-distribution), if nu is large (infinite) this is equivalent to the normal distribution noise
+# 
+# #taunoise ~ dgamma(0.001,0.001) #extra Poisson variance on counts
+# taunoise ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+# sd_noise <- taunoise^-0.5
+# #varnoise <- 1/taunoise
+# adj <- (1.422*pow(nu,0.906))/(1+(1.422*pow(nu,0.906)))
+# varnoise <- (sd_noise/adj)^2
 hab[1] <- 0  
 for(h in 2:nhabitats){
-  hab[h] ~ dnorm(0,0.1) #mean habitat effects for a species
+  hab[h] ~ dnorm(0,0.1) #mean habitat effects across all species
 }
 
 for(s in 1:nspecies){
@@ -259,18 +267,35 @@ for(s in 1:nspecies){
 alpha[s] ~ dnorm(0,0.1)#### species means - fixed effects
 
 
+
+
+### overdispersion parameters by species
+#nu[s] ~ dgamma(2, 0.1) #alternative degrees of freedom (i.e., the heavy-tail component of the t-distribution), if nu is large (infinite) this is equivalent to the normal distribution noise
+
+#taunoise[s] ~ dgamma(0.001,0.001) #extra Poisson variance on counts
+#taunoise[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+#sd_noise[s] <- taunoise[s]^-0.5
+#varnoise[s] <- 1/taunoise[s]
+#adj[s] <- (1.422*pow(nu[s],0.906))/(1+(1.422*pow(nu[s],0.906)))
+#varnoise[s] <- (sd_noise[s]/adj[s])^2
+####
+
+
 #### main effects of habitat by stratum and species
 
 tau_hab_region[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
 sd_hab_region[s] <- tau_hab_region[s]^-0.5
 
+tau_hab[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+sd_hab[s] <- tau_hab[s]^-0.5
+
 #tau_hab_region[s] ~ dgamma(0.001,0.001) #prior on species specific variance
 
 for(h in 1:nhabitats){
-  #hab[h,s] ~ dnorm(0,0.1) #mean habitat effects for a species
+  hab2[h,s] ~ dnorm(hab[h],tau_hab[s]) #mean habitat effects for a species
   for(r in 1:nsub_regions){
-    #strat[h,r,s] ~ dnorm(hab[h,s],tau_hab_region) ## alternative without species specific variance
-    strat[h,r,s] ~ dnorm(hab[h],tau_hab_region[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
+    strat[h,r,s] ~ dnorm(hab2[h,s],tau_hab_region[s]) ## alternative without species specific variance
+    #strat[h,r,s] ~ dnorm(hab[h],tau_hab_region[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
 
   }#r
 }#h
@@ -281,24 +306,25 @@ for(h in 1:nhabitats){
 #### random effects of site within clusters (zones)
 #tau_cluster[s] ~ dgamma(0.001,0.001) #
 #tau_site_cluster[s] ~ dgamma(0.001,0.001)
-#tau_cluster[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
-#sd_cluster[s] <- tau_cluster[s]^-0.5
+tau_cluster[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+sd_cluster[s] <- tau_cluster[s]^-0.5
 #tau_site_cluster[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
 #sd_site_cluster[s] <- tau_site_cluster[s]^-0.5
 
 
 
 
-#v_cluster[s] <- 1/tau_cluster[s]
+v_cluster[s] <- 1/tau_cluster[s]
 #v_site_cluster[s] <- 1/tau_site_cluster[s]
 
-# for(k in 1:nclusters){
-#   #clust[k,s] ~ dnorm(0,tau_cluster[s])
+ for(k in 1:nclusters){
+#    clust[k,s] ~ dnorm(0,tau_cluster[s])
 #   for(p in 1:nplots[k]){
-#     site[p,k,s] ~ dnorm(0,tau_site_cluster[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
+#     zone[k,s] ~ dt(0,tau_site_cluster[s],nu[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
+     zone[k,s] ~ dnorm(0,tau_cluster[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
 #       #site[p,k,s] ~ dnorm(clust[k,s],tau_site_cluster[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
 #   }#p
-# }#h
+ }#k
 
 
 
@@ -309,13 +335,24 @@ for(h in 1:nhabitats){
 for(h in 1:nhabitats){
 
     #n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
-    #n_uncor[s,h,r] <- exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
-     n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*varnoise)
-    n_uncor[s,h,r] <- exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*varnoise)
+    #n_density[s,h,r] <- exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
+     for(k in 1:nclusters){
+       nk2[s,h,r,k] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] - sr[s] + zone[k,s])
+       n_densityk2[s,h,r,k] <- exp(alpha[s] + strat[h,r,s] - sr[s] + zone[k,s])
+     }#k
+     
+     nk[s,h,r] <- mean(nk2[s,h,r,1:nclusters])
+     n_densityk[s,h,r] <- mean(n_densityk2[s,h,r,1:nclusters])
+     
+     
+     n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] - sr[s] + 0.5*v_cluster[s])
+    n_density[s,h,r] <- exp(alpha[s] + strat[h,r,s] - sr[s] + 0.5*v_cluster[s])
     
 }#h
+Nrk[s,r] <- sum(nk[s,1:nhabitats,r])
 Nr[s,r] <- sum(n[s,1:nhabitats,r])
 }#r
+Nk[s] <- sum(Nrk[s,1:nsub_regions])
 N[s] <- sum(Nr[s,1:nsub_regions])
 
 }#s
@@ -345,7 +382,7 @@ for(i in 1:nintensive){
 	log(lambda_i[i]) <- loglambda_i[i]
 	
  ## species specific counts at each rapid survey of intensive plots
-   mu_r[i] <- loglambda_i[i] - sr[species_r[i]] #expected count for that species in the intensive survey minus a correction value
+   mu_r[i] <- loglambda_i[i] + sr[species_r[i]] #expected count for that species in the intensive survey plus a correction value
 	loglambda_r[i] ~ dnorm(mu_r[i],taunoise_r)
 	log(lambda_r[i]) <- loglambda_r[i]
 
@@ -371,7 +408,7 @@ SR ~ dnorm(0,0.1) #mean detection ratio across species
 		  # si[s,sr] ~ dnorm(mu_si[s],taustratspecies)
 		  # sr[s,sr] ~ dnorm(mu_sr[s],taustrat_ratio)
 		  # 
-		  vis[s] <- exp(sr[s]) #species by region visibility adjustments on the multiplicative scale
+		  vis[s] <- exp(sr[s]) #species visibility adjustments on the multiplicative scale
 	}#s
 	all_muvis <- exp(SR)
 
@@ -384,22 +421,25 @@ sink()
 # Run the model -----------------------------------------------------------
 
 
-nburn = 2000
+nburn = 10000
 nsave = 5000
 nthin = 10
 
 mod = jags(data = jags_data,
            model.file = "PRISM_model.txt",
            parameters.to.save = c("vis","all_muvis","sd_sr",
-                                  "n","n_uncor",
+                                  "n","n_density",
                                   "N","Nr",
-                                  "nu",
-                                  #"sd_cluster",
+                                  "nk","n_densityk",
+                                  "Nk","Nrk",
+                                  #"nu",
+                                  "sd_cluster",
                                   "hab",
                                   "strat",
                                   #"sd_site_cluster",
-                                  "sd_noise",
-                                  "sd_hab_region"),
+                                  #"sd_noise",
+                                  "sd_hab_region",
+                                  "sd_hab"),
            n.chains = 3,
            n.iter = (nsave*nthin)+nburn,
            n.burnin = nburn,
@@ -409,14 +449,16 @@ mod = jags(data = jags_data,
 
 
 
-out = data.frame(mod$summary)  
-out$node = row.names(out)
-names(out)[3:7] <- c("lci","lqrt","med","uqrt","uci")
 
+save(mod,file = "PRISM posterior object.RData")
 
+#load("PRISM posterior object.RData")
 
 # visibility plot ---------------------------------------------------------
 
+out = data.frame(mod$summary)
+out$node = row.names(out)
+names(out)[3:7] <- c("lci","lqrt","med","uqrt","uci")
 
 out_vis = filter(out,node %in% paste0("vis[",1:nspecies,"]"))
 out_vis$j_species = 1:nrow(out_vis)
@@ -426,15 +468,17 @@ out_vis = left_join(out_vis,sp_names_indices)
 visib = ggplot(data = out_vis,aes(x = species,y = med))+
   geom_linerange(aes(x = species,ymin = lci,ymax = uci),alpha = 0.5)+
   geom_point()+
-  ylab("Multiplicative visibility correction factor")+
+  ylab("Visibility correction factor (Rapid/Intensive)")+
   geom_hline(yintercept = 1)+
-  coord_cartesian(ylim = c(0.25,1.5))+
+  #coord_cartesian(ylim = c(0.25,1.5))+
   labs(title = "Detectability ratios all indicate more birds observed during rapid surveys")
 
 pdf("visibility correction factors.pdf")
 print(visib)  
   dev.off()
   
+  
+  write.csv(out_vis, "Visibility correction factors.csv")
   
 
 # regional abundance plot by habitat -------------------------------------------------
@@ -464,19 +508,18 @@ for(pg in 1:ceiling(nspecies/6)){
 
 
   dev.off()
+  write.csv(out_n, "sub_regional population size estimates by habitat.csv")
+  
   
   
   
 
 # regional density plot uncorrected for area ----------------------
-# add mean observed
-  
-  
 
-  out_n = filter(out,grepl(node,pattern = "n_uncor[",fixed = T))
-  out_n$j_species = as.integer(str_match(out_n$node,"(?<=n_uncor[:punct:])[:digit:]+"))
-  out_n$habitat = as.integer(str_match(out_n$node,"(?<=n_uncor[:punct:][:digit:]{1,2}[:punct:])[:digit:]+"))
-  out_n$j_sub_region = as.integer(str_match(out_n$node,"(?<=n_uncor[:punct:][:digit:]{1,2}[:punct:][:digit:]{1,2}[:punct:])[:digit:]+"))
+  out_n = filter(out,grepl(node,pattern = "n_density[",fixed = T))
+  out_n$j_species = as.integer(str_match(out_n$node,"(?<=n_density[:punct:])[:digit:]+"))
+  out_n$habitat = as.integer(str_match(out_n$node,"(?<=n_density[:punct:][:digit:]{1,2}[:punct:])[:digit:]+"))
+  out_n$j_sub_region = as.integer(str_match(out_n$node,"(?<=n_density[:punct:][:digit:]{1,2}[:punct:][:digit:]{1,2}[:punct:])[:digit:]+"))
   
   out_n = left_join(out_n,sp_names_indices)
   out_n = left_join(out_n,all_sub_regions)
@@ -487,26 +530,63 @@ for(pg in 1:ceiling(nspecies/6)){
                  all_data$X7.Hab == out_n[j,"habitat"] &
                  all_data$species == out_n[j,"species"])
     out_n[j,"obs_mean"] <- mean(as.numeric(unlist(all_data[ww,"number"]/all_data[ww,"area"])),na.rm = T)
-      }
+    out_n[j,"nplots"] <- length(which(!is.na(ww)))
+     }
 
   pdf("sub_regional density estimates not corrected for area.pdf",
       width = 11,
       height = 8.5)
-  for(pg in 1:ceiling(nspecies/6)){
+  for(pg in 1:ceiling(nspecies/3)){
     nbyreg_s = ggplot(data = out_n,aes(x = Region,y = med,colour = habitat))+
     geom_linerange(aes(x = Region,ymin = lci,ymax = uci),alpha = 0.5,position = position_dodge(width = 0.6))+
     geom_point(position = position_dodge(width = 0.6))+
+      geom_text(data = out_n,aes(x = Region,y = uci,label = nplots,colour = habitat),position = position_dodge(width = 0.6))+
       geom_point(data = out_n,aes(x = Region,y = obs_mean,colour = habitat),shape = 2,alpha = 0.5,position = position_dodge(width = 0.6))+
-      facet_wrap_paginate(facets = ~species,scales = "free",ncol = 2,nrow = 3,page = pg)
+      facet_wrap_paginate(facets = ~species,scales = "free",ncol = 1,nrow = 3,page = pg)
     print(nbyreg_s)
   }
     dev.off()
   
+  write.csv(out_n,"sub_regional density estimates.csv")
   
   
   
-  
-  
+    # regional density plot using smearing estimator ----------------------
+    
+    out_n = filter(out,grepl(node,pattern = "n_densityk[",fixed = T))
+    out_n$j_species = as.integer(str_match(out_n$node,"(?<=n_densityk[:punct:])[:digit:]+"))
+    out_n$habitat = as.integer(str_match(out_n$node,"(?<=n_densityk[:punct:][:digit:]{1,2}[:punct:])[:digit:]+"))
+    out_n$j_sub_region = as.integer(str_match(out_n$node,"(?<=n_densityk[:punct:][:digit:]{1,2}[:punct:][:digit:]{1,2}[:punct:])[:digit:]+"))
+    
+    out_n = left_join(out_n,sp_names_indices)
+    out_n = left_join(out_n,all_sub_regions)
+    out_n$Region = factor(out_n$Region)
+    out_n$habitat = factor(out_n$habitat)
+    for(j in 1:nrow(out_n)){
+      ww = which(all_data$X1.Region == out_n[j,"Region"] &
+                   all_data$X7.Hab == out_n[j,"habitat"] &
+                   all_data$species == out_n[j,"species"])
+      out_n[j,"obs_mean"] <- mean(as.numeric(unlist(all_data[ww,"number"]/all_data[ww,"area"])),na.rm = T)
+      out_n[j,"nplots"] <- length(which(!is.na(ww)))
+    }
+    
+    pdf("sub_regional density estimates alternative.pdf",
+        width = 11,
+        height = 8.5)
+    for(pg in 1:ceiling(nspecies/3)){
+      nbyreg_s = ggplot(data = out_n,aes(x = Region,y = med,colour = habitat))+
+        geom_linerange(aes(x = Region,ymin = lci,ymax = uci),alpha = 0.5,position = position_dodge(width = 0.6))+
+        geom_point(position = position_dodge(width = 0.6))+
+        geom_text(data = out_n,aes(x = Region,y = uci,label = nplots,colour = habitat),position = position_dodge(width = 0.6))+
+        geom_point(data = out_n,aes(x = Region,y = obs_mean,colour = habitat),shape = 2,alpha = 0.5,position = position_dodge(width = 0.6))+
+        facet_wrap_paginate(facets = ~species,scales = "free",ncol = 1,nrow = 3,page = pg)
+      print(nbyreg_s)
+    }
+    dev.off()
+    
+    
+    write.csv(out_n,"sub_regional density estimates alternative.csv")
+    
   
   # regional abundance plot  ----------------------
   
@@ -536,6 +616,7 @@ for(pg in 1:ceiling(nspecies/6)){
   }
   dev.off()
   
+  write.csv(out_n,"sub_regional population size estimates.csv")
   
   
   
@@ -559,6 +640,7 @@ for(pg in 1:ceiling(nspecies/6)){
   print(visib)  
   dev.off()
   
+  write.csv(out_N,"Total estimated populations.csv")
   
 
 # MCMC explore ------------------------------------------------------------

@@ -8,4 +8,8 @@
 arch/
 doc/
 *parameters.pdf
+*.RData
+/speciesleveltoverdisp
+*/New Folder
+
 
