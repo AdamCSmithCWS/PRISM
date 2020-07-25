@@ -35,6 +35,10 @@ for(h in 2:nhabitats){
   hab[h] ~ dnorm(0,0.1) #mean habitat effects across all species
 }
 
+#variance of the habitat effects among species
+#tau_hab ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+#sd_hab <- tau_hab^-0.5
+
 for(s in 1:nspecies){
 
 alpha[s] ~ dnorm(0,0.1)#### species means - fixed effects
@@ -59,13 +63,15 @@ alpha[s] ~ dnorm(0,0.1)#### species means - fixed effects
 tau_hab_region[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
 sd_hab_region[s] <- tau_hab_region[s]^-0.5
 
-tau_hab[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
-sd_hab[s] <- tau_hab[s]^-0.5
+#tau_hab[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+#sd_hab[s] <- tau_hab[s]^-0.5 #removed tau_hab as a species specific term because there isn't sufficient data to estimate the variance separately among species
 
 #tau_hab_region[s] ~ dgamma(0.001,0.001) #prior on species specific variance
 
 for(h in 1:nhabitats){
-  hab2[h,s] ~ dnorm(hab[h],tau_hab[s]) #mean habitat effects for a species
+  hab2[h,s] <- hab[h]#mean habitat effects for a species
+  
+  #hab2[h,s] ~ dnorm(hab[h],tau_hab) #mean habitat effects for a species
   for(r in 1:nsub_regions){
     strat[h,r,s] ~ dnorm(hab2[h,s],tau_hab_region[s]) ## alternative without species specific variance
     #strat[h,r,s] ~ dnorm(hab[h],tau_hab_region[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
@@ -109,24 +115,46 @@ for(h in 1:nhabitats){
 
     #n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
     #n_density[s,h,r] <- exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
-     for(k in 1:nclusters){
-       nk2[s,h,r,k] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] - sr[s] + zone[k,s])
-       n_densityk2[s,h,r,k] <- exp(alpha[s] + strat[h,r,s] - sr[s] + zone[k,s])
-     }#k
+    # for(k in 1:nclusters){
+    #   nk2[s,h,r,k] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] - sr[s] + zone[k,s])
+    #   n_densityk2[s,h,r,k] <- exp(alpha[s] + strat[h,r,s] - sr[s] + zone[k,s])
+     #}#k
      
-     nk[s,h,r] <- mean(nk2[s,h,r,1:nclusters])
-     n_densityk[s,h,r] <- mean(n_densityk2[s,h,r,1:nclusters])
+     #nk[s,h,r] <- mean(nk2[s,h,r,1:nclusters])
+     #n_densityk[s,h,r] <- mean(n_densityk2[s,h,r,1:nclusters])
      
-     
-     n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] - sr[s] + 0.5*v_cluster[s])
-    n_density[s,h,r] <- exp(alpha[s] + strat[h,r,s] - sr[s] + 0.5*v_cluster[s])
+     ## 2 * adds back in the pair-correction that is assumed in the survey method
+     na[s,h,r] <- 2 * areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] - sr[s] + 0.5*v_cluster[s])
+    n_densitya[s,h,r] <- 2 * exp(alpha[s] + strat[h,r,s] - sr[s] + 0.5*v_cluster[s])
     
 }#h
-Nrk[s,r] <- sum(nk[s,1:nhabitats,r])
-Nr[s,r] <- sum(n[s,1:nhabitats,r])
+#Nrk[s,r] <- sum(nk[s,1:nhabitats,r]) # number calculations assuming non-normal variance structure (mean of the exponenents)
+Nra[s,r] <- sum(na[s,1:nhabitats,r]) # number calculations assuming normal variance structure (exponent of the means with log-normal retransformation)
 }#r
-Nk[s] <- sum(Nrk[s,1:nsub_regions])
-N[s] <- sum(Nr[s,1:nsub_regions])
+
+for(r in reg_inc[s,1:nreg_inc[s]]){
+for(h in 1:nhabitats){
+n[s,h,r] <- na[s,h,r]
+n_density[s,h,r] <- n_densitya[s,h,r]
+}
+Nr[s,r] <- Nra[s,r]
+}
+for(r in reg_not_inc[s,1:nreg_not_inc[s]]){
+for(h in 1:nhabitats){
+n[s,h,r] <- 0
+n_density[s,h,r] <- 0
+}
+Nr[s,r] <- 0
+}
+
+
+#Nk[s] <- sum(Nrk[s,reg_inc[s,1:nreg_inc[s]]]) #total population, assuming species are present in all sub-regions
+N[s] <- sum(Nr[s,reg_inc[s,1:nreg_inc[s]]])
+
+#Nk_inc[s] <- sum(Nrk[s,reg_inc[s,1:nreg_inc[s]]]) #total population, assuming species is only present in sub-regions where it was observed (reg_inc[s])
+#N_inc[s] <- sum(Nr[s,reg_inc[s,1:nreg_inc[s]]])
+
+#N_not_inc[s] <- N[s]-N_inc[s]
 
 }#s
 
@@ -165,11 +193,21 @@ for(i in 1:nintensive){
 
 
 ## priors
-taunoise_i ~ dgamma(0.001,0.001) # count variance on intensive surveys
-taunoise_r ~ dgamma(0.001,0.001) # count variance on rapid surveys
+
+taunoise_i ~ dscaled.gamma(1,100) # count variance on intensive surveys #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+taunoise_r ~ dscaled.gamma(1,100) # count variance on rapid surveys
+tau_sr ~ dscaled.gamma(1,100) # variance among species in the detection ratio
+
+sd_noise_i <- taunoise_i^-0.5
+sd_noise_r <- taunoise_r^-0.5
+sd_sr <- tau_sr^-0.5
+
+
+#taunoise_i ~ dgamma(0.001,0.001) # count variance on intensive surveys
+#taunoise_r ~ dgamma(0.001,0.001) # count variance on rapid surveys
 #taustratspecies ~ dgamma(0.001,0.001) #variance among strata on species true abundance in intensive surveys 
 
-tau_sr ~ dgamma(0.001,0.001) # variance among species in the detection ratio
+#tau_sr ~ dgamma(0.001,0.001) # variance among species in the detection ratio
 #taustrat_ratio ~ dgamma(0.001,0.001) #variance among strata on species level detection ratio
 SR ~ dnorm(0,0.1) #mean detection ratio across species 
 

@@ -11,5 +11,6 @@ doc/
 *.RData
 /speciesleveltoverdisp
 */New Folder
-
+*.pdf
+/output
 

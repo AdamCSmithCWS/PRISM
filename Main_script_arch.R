@@ -327,16 +327,33 @@ log(lambda[i]) <- elambda[i]
 
 elambda[i] <- log_area[i] + alpha[species[i]] + strat[habitat[i],sub_region[i],species[i]] + zone[cluster[i],species[i]]
 
+#elambda[i] <- log_area[i] + alpha[species[i]] + strat[habitat[i],sub_region[i],species[i]] + site[plot[i],cluster[i],species[i]] + noise[i]
+#elambda[i] <- log_area[i] + alpha[species[i]] + strat[habitat[i],sub_region[i],species[i]] + noise[i]
+
+#noise[i] ~ dnorm(0,taunoise[species[i]])
+#noise[i] ~ dt(0,taunoise[species[i]],nu[species[i]]) #alternate heavy-tailed
 
 }#i
 
 
 
+### precision priors
+# nu ~ dgamma(2, 0.1) #alternative degrees of freedom (i.e., the heavy-tail component of the t-distribution), if nu is large (infinite) this is equivalent to the normal distribution noise
+# 
+# #taunoise ~ dgamma(0.001,0.001) #extra Poisson variance on counts
+# taunoise ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+# sd_noise <- taunoise^-0.5
+# #varnoise <- 1/taunoise
+# adj <- (1.422*pow(nu,0.906))/(1+(1.422*pow(nu,0.906)))
+# varnoise <- (sd_noise/adj)^2
 hab[1] <- 0  
 for(h in 2:nhabitats){
   hab[h] ~ dnorm(0,0.1) #mean habitat effects across all species
 }
 
+#variance of the habitat effects among species
+#tau_hab ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+#sd_hab <- tau_hab^-0.5
 
 for(s in 1:nspecies){
 
@@ -345,6 +362,16 @@ alpha[s] ~ dnorm(0,0.1)#### species means - fixed effects
 
 
 
+### overdispersion parameters by species
+#nu[s] ~ dgamma(2, 0.1) #alternative degrees of freedom (i.e., the heavy-tail component of the t-distribution), if nu is large (infinite) this is equivalent to the normal distribution noise
+
+#taunoise[s] ~ dgamma(0.001,0.001) #extra Poisson variance on counts
+#taunoise[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+#sd_noise[s] <- taunoise[s]^-0.5
+#varnoise[s] <- 1/taunoise[s]
+#adj[s] <- (1.422*pow(nu[s],0.906))/(1+(1.422*pow(nu[s],0.906)))
+#varnoise[s] <- (sd_noise[s]/adj[s])^2
+####
 
 
 #### main effects of habitat by stratum and species
@@ -352,12 +379,18 @@ alpha[s] ~ dnorm(0,0.1)#### species means - fixed effects
 tau_hab_region[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
 sd_hab_region[s] <- tau_hab_region[s]^-0.5
 
+#tau_hab[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+#sd_hab[s] <- tau_hab[s]^-0.5 #removed tau_hab as a species specific term because there isn't sufficient data to estimate the variance separately among species
+
+#tau_hab_region[s] ~ dgamma(0.001,0.001) #prior on species specific variance
 
 for(h in 1:nhabitats){
   hab2[h,s] <- hab[h]#mean habitat effects for a species
   
+  #hab2[h,s] ~ dnorm(hab[h],tau_hab) #mean habitat effects for a species
   for(r in 1:nsub_regions){
     strat[h,r,s] ~ dnorm(hab2[h,s],tau_hab_region[s]) ## alternative without species specific variance
+    #strat[h,r,s] ~ dnorm(hab[h],tau_hab_region[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
 
   }#r
 }#h
@@ -365,16 +398,27 @@ for(h in 1:nhabitats){
 
 
 
+#### random effects of site within clusters (zones)
+#tau_cluster[s] ~ dgamma(0.001,0.001) #
+#tau_site_cluster[s] ~ dgamma(0.001,0.001)
 tau_cluster[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
 sd_cluster[s] <- tau_cluster[s]^-0.5
+#tau_site_cluster[s] ~ dscaled.gamma(1,100) #implicit prior on sigma of a half-t dist: sigma = 1*t(df = 100) , i.e., 95% prob sd < 2.3
+#sd_site_cluster[s] <- tau_site_cluster[s]^-0.5
 
 
 
 
 v_cluster[s] <- 1/tau_cluster[s]
+#v_site_cluster[s] <- 1/tau_site_cluster[s]
 
  for(k in 1:nclusters){
+#    clust[k,s] ~ dnorm(0,tau_cluster[s])
+#   for(p in 1:nplots[k]){
+#     zone[k,s] ~ dt(0,tau_site_cluster[s],nu[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
      zone[k,s] ~ dnorm(0,tau_cluster[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
+#       #site[p,k,s] ~ dnorm(clust[k,s],tau_site_cluster[s]) #stratum, habitat, and species specific intercepts, centered on the species intercepts
+#   }#p
  }#k
 
 
@@ -385,13 +429,22 @@ v_cluster[s] <- 1/tau_cluster[s]
   for(r in 1:nsub_regions){
 for(h in 1:nhabitats){
 
- 
- 
+    #n[s,h,r] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
+    #n_density[s,h,r] <- exp(alpha[s] + strat[h,r,s] + sr[s] + 0.5*v_cluster[s] + 0.5*v_site_cluster[s] + 0.5*varnoise)
+    # for(k in 1:nclusters){
+    #   nk2[s,h,r,k] <- areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] - sr[s] + zone[k,s])
+    #   n_densityk2[s,h,r,k] <- exp(alpha[s] + strat[h,r,s] - sr[s] + zone[k,s])
+     #}#k
+     
+     #nk[s,h,r] <- mean(nk2[s,h,r,1:nclusters])
+     #n_densityk[s,h,r] <- mean(n_densityk2[s,h,r,1:nclusters])
+     
      ## 2 * adds back in the pair-correction that is assumed in the survey method
      na[s,h,r] <- 2 * areas_mat[r,h] * exp(alpha[s] + strat[h,r,s] - sr[s] + 0.5*v_cluster[s])
     n_densitya[s,h,r] <- 2 * exp(alpha[s] + strat[h,r,s] - sr[s] + 0.5*v_cluster[s])
     
 }#h
+#Nrk[s,r] <- sum(nk[s,1:nhabitats,r]) # number calculations assuming non-normal variance structure (mean of the exponenents)
 Nra[s,r] <- sum(na[s,1:nhabitats,r]) # number calculations assuming normal variance structure (exponent of the means with log-normal retransformation)
 }#r
 
@@ -411,8 +464,13 @@ Nr[s,r] <- 0
 }
 
 
+#Nk[s] <- sum(Nrk[s,reg_inc[s,1:nreg_inc[s]]]) #total population, assuming species are present in all sub-regions
 N[s] <- sum(Nr[s,reg_inc[s,1:nreg_inc[s]]])
 
+#Nk_inc[s] <- sum(Nrk[s,reg_inc[s,1:nreg_inc[s]]]) #total population, assuming species is only present in sub-regions where it was observed (reg_inc[s])
+#N_inc[s] <- sum(Nr[s,reg_inc[s,1:nreg_inc[s]]])
+
+#N_not_inc[s] <- N[s]-N_inc[s]
 
 }#s
 
